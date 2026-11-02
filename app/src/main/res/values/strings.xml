@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Murmur</string>
+    <string name="accessibility_description">Lets Murmur type your dictated text into the text box you are using. Murmur only reads the focused text box when you finish dictating, and never sends anything off your phone.</string>
+</resources>
