@@ -11,6 +11,10 @@ class Recorder(private val onLimitReached: () -> Unit) {
     private var thread: Thread? = null
     @Volatile private var running = false
 
+    /** Loudness of the latest ~33 ms, 0..1 (drives the bubble's live bars). */
+    @Volatile var level = 0f
+        private set
+
     private var buffer = FloatArray(Transcriber.SAMPLE_RATE * 30)
     private var size = 0
     private val lock = Any()
@@ -42,10 +46,13 @@ class Recorder(private val onLimitReached: () -> Unit) {
         record = rec
         running = true
         thread = Thread({
-            val chunk = ShortArray(rate / 10)
+            val chunk = ShortArray(rate / 30)
             while (running) {
                 val n = rec.read(chunk, 0, chunk.size)
-                if (n > 0) append(chunk, n)
+                if (n > 0) {
+                    append(chunk, n)
+                    level = loudness(chunk, n)
+                }
                 if (size >= MAX_SECONDS * rate) {
                     running = false
                     onLimitReached()
@@ -59,6 +66,17 @@ class Recorder(private val onLimitReached: () -> Unit) {
         if (size + n > buffer.size) buffer = buffer.copyOf(maxOf(buffer.size * 2, size + n))
         for (i in 0 until n) buffer[size + i] = chunk[i] / 32768f
         size += n
+    }
+
+    /** Same normalisation as Muesli's indicator: clamp((dBFS + 68) / 38, 0, 1). */
+    private fun loudness(chunk: ShortArray, n: Int): Float {
+        var sum = 0.0
+        for (i in 0 until n) {
+            val v = chunk[i] / 32768.0
+            sum += v * v
+        }
+        val db = 10 * kotlin.math.log10(sum / n + 1e-12)
+        return ((db + 68) / 38).toFloat().coerceIn(0f, 1f)
     }
 
     fun stop(): FloatArray {

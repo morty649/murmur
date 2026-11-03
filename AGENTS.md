@@ -10,7 +10,8 @@ app; tap it, talk, tap again, and the text is typed into whatever text box is fo
 - Started 2026-11-03. The owner (GitHub `morty649`) wanted the dictation part of
   [Muesli](https://github.com/Muesli-HQ/muesli) (a macOS app, cloned at `~/Work/muesli`) on their Android
   phone, and **nothing else**. Keep it small. Don't add meeting notes, history, sync, accounts, etc. unless asked.
-- Repo: `~/Work/murmur` → private `github.com/morty649/murmur`, branch `main`.
+- Repo: `~/Work/murmur` → `github.com/morty649/murmur`, branch `main`. Made **public** (2026-11-03) so the
+  in-app updater can download releases without a token. Never commit secrets.
 - The name "Murmur" is the owner's choice for now. The icon is a murmuration of starlings, which is what the name refers to.
 
 ## Status (end of first session, 2026-11-03)
@@ -29,14 +30,18 @@ app; tap it, talk, tap again, and the text is typed into whatever text box is fo
 - **Never build or run heavy things on the owner's Mac** (it overheats, and there's no JDK installed anyway).
   All builds run on GitHub Actions.
 - Show visual choices (icons, UI) as previews before committing. That's how the icon was picked.
+  Bubble mockups: https://claude.ai/artifact/HDEKyuWKwhjoZmod5WC1zD (owner wanted all three styles selectable).
 
 ## How to ship a change
 
 1. Edit code in `~/Work/murmur`, commit, `git push` to `main`.
 2. `.github/workflows/build.yml` builds a signed release APK on GitHub Actions (~4 min) and replaces the GitHub
-   release tagged **`latest`** with `Murmur-0.1.<run_number>.apk`. Watch it with `gh run watch <id>`.
+   release tagged **`latest`** with `Murmur-0.1.<run_number>.apk` plus `version.json` (versionCode = run number,
+   sha256, size), which the in-app updater reads. Don't rename these assets or the tag. Watch it with `gh run watch <id>`.
    CI is the compiler: there is no local build, so read CI errors with `gh run view <id> --log-failed`.
-3. The owner downloads the APK on their phone from Releases → latest and installs it over the old one.
+3. The app offers the update itself (popup on open, or Settings → Updates → Check now). Manual fallback: download
+   the APK from Releases → latest and install it over the old one. The first in-app update asks for Android's
+   "Install unknown apps" permission once; on Android 12+ later updates may skip the confirm screen.
    Updates keep the downloaded model because the signing key is fixed.
 
 Docs-only pushes (`*.md`) don't trigger a build.
@@ -58,14 +63,15 @@ Kotlin API classes (`com.k2fsa.sherpa.onnx.*`).
 
 | File | Role |
 |---|---|
-| `BubbleService.kt` | Foreground service (type `microphone`): floating overlay bubble, recording, transcription, delivery. States: grey=loading, blue=ready, red=listening, amber=transcribing. |
+| `BubbleService.kt` | Foreground service (type `microphone`): floating overlay bubble, recording, transcription, delivery. Idle bubble has 3 user-chosen styles (glass dot / edge tab / app icon, all using the starling mark, never a mic) and a transparency setting (0–85%, idle only). Loading / listening / transcribing show a solid Muesli-style capsule with 5 bars (live loudness from `Recorder.level` while listening, red; amber wave while transcribing). Docks to the left or right edge (window gravity START/END so the capsule grows inwards). |
 | `TypeService.kt` | AccessibilityService. Inserts text at the cursor in the focused editable node (`ACTION_SET_TEXT` + selection), falls back to clipboard + `ACTION_PASTE`. Reads nothing else. |
 | `Transcriber.kt` | Holds one `OfflineRecognizer` (`nemo_transducer`, greedy). Splits audio over 25 s at the quietest 100 ms window near each boundary. |
 | `Recorder.kt` | `AudioRecord` 16 kHz mono, in memory only, 5-minute cap. |
 | `ModelCatalog.kt` | Models, with Hugging Face repo, **pinned revision**, file sizes and SHA-256 values. |
 | `ModelManager.kt` | Downloads via Android `DownloadManager` (resumable, survives app close), then verifies size and SHA-256, then writes a `.ready` marker. Models live in `getExternalFilesDir()/models/<id>/`. |
 | `Cleanup.kt` | "Light" cleanup: regex filler removal (um/uh/erm/hmm), spacing, capitals. Parakeet already outputs punctuation. |
-| `Prefs.kt` | SharedPreferences: selected model, cleanup mode, bubble position, download IDs. |
+| `Prefs.kt` | SharedPreferences: selected model, cleanup mode, bubble style/transparency/dock side, update snooze, download IDs. The service listens for style/transparency changes and redraws live. |
+| `Updater.kt` | In-app updates: reads `version.json` from the public `latest` release, downloads the APK, checks SHA-256 + size, installs via `PackageInstaller` (`UpdateReceiver` shows Android's confirm screen). Popup: "Update now" / "Remind me later" (24 h snooze per version). Also "Check now" in settings. |
 | `MainActivity.kt` | One-screen Compose settings UI: models, permissions, cleanup, bubble switch, test box. |
 
 ### Models (all sherpa-onnx NeMo transducers: encoder/decoder/joiner `.int8.onnx` + `tokens.txt`)
